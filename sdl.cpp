@@ -16,21 +16,9 @@
 #ifdef HAVE_STRINGS_H
 #include <strings.h>
 #endif
-#ifdef USE_THREADS
-#include <sched.h>
-#include <pthread.h>
-#include <vector>
-#endif
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#ifdef HAVE_SYS_IOCTL_H
-#include <sys/ioctl.h>
-#endif
-
-#ifdef JOYSTICK_SUPPORT
-#include <linux/joystick.h>
-#endif
 
 #include "snes9x.h"
 #include "memmap.h"
@@ -39,12 +27,8 @@
 #include "gfx.h"
 #include "snapshot.h"
 #include "controls.h"
-#include "cheats.h"
-#include "movie.h"
 #include "display.h"
 #include "conffile.h"
-#include "fscompat.h"
-#include "statemanager.h"
 
 SDL_Window *window;
 SDL_Renderer *renderer;
@@ -53,73 +37,11 @@ SDL_AudioDeviceID audioDev;
 
 Resampler audio_buffer;
 
-StateManager stateMan;
-
 #define SOUND_BUFFER_SIZE (256)
 
-static const char *sound_device = NULL;
-
-static const char *s9x_base_dir = NULL,
-                  *rom_filename = NULL,
-                  *snapshot_filename = NULL,
-                  *play_smv_filename = NULL,
-                  *record_smv_filename = NULL;
-
-static char default_dir[PATH_MAX + 1];
-
-static const char dirNames[13][32] =
-    {
-        "",           // DEFAULT_DIR
-        "",           // HOME_DIR
-        "",           // ROMFILENAME_DIR
-        "rom",        // ROM_DIR
-        "sram",       // SRAM_DIR
-        "savestate",  // SNAPSHOT_DIR
-        "screenshot", // SCREENSHOT_DIR
-        "spc",        // SPC_DIR
-        "cheat",      // CHEAT_DIR
-        "patch",      // PATCH_DIR
-        "bios",       // BIOS_DIR
-        "log",        // LOG_DIR
-        ""};
-
-struct SUnixSettings
-{
-  bool8 JoystickEnabled;
-  bool8 ThreadSound;
-  uint32 SoundBufferSize;
-  uint32 SoundFragmentSize;
-  uint32 rewindBufferSize;
-  uint32 rewindGranularity;
-};
+static const char *rom_filename = NULL;
 
 static int frame_advance = 0;
-static SUnixSettings unixSettings;
-
-static bool8 rewinding;
-
-#ifdef JOYSTICK_SUPPORT
-static uint8 js_mod[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-static int js_fd[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
-static const char *js_device[8] = {"/dev/js0", "/dev/js1", "/dev/js2", "/dev/js3", "/dev/js4", "/dev/js5", "/dev/js6", "/dev/js7"};
-static bool8 js_unplugged[8] = {FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, FALSE};
-#endif
-
-bool8 S9xMapDisplayInput(const char *, s9xcommand_t *);
-s9xcommand_t S9xGetDisplayCommandT(const char *);
-char *S9xGetDisplayCommandName(s9xcommand_t);
-void S9xHandleDisplayCommand(s9xcommand_t, int16, int16);
-bool S9xDisplayPollButton(uint32, bool *);
-bool S9xDisplayPollAxis(uint32, int16 *);
-bool S9xDisplayPollPointer(uint32, int16 *, int16 *);
-
-// static void NSRTControllerSetup (void);
-static int make_snes9x_dirs(void);
-#ifdef JOYSTICK_SUPPORT
-static void InitJoysticks(void);
-static bool8 ReadJoysticks(void);
-void S9xLatchJSEvent();
-#endif
 
 void S9xMessage(int type, int number, const char *message)
 {
@@ -147,11 +69,6 @@ void S9xParseArg(char **argv, int &i, int argc)
 
 void S9xParsePortConfig(ConfigFile &conf, int pass)
 {
-}
-
-static int make_snes9x_dirs(void)
-{
-  return (0);
 }
 
 void blitPixSimple1x1(uint8 *srcPtr, int srcRowBytes, uint8 *dstPtr, int dstRowBytes, int width, int height)
@@ -184,30 +101,22 @@ std::string S9xGetDirectory(enum s9x_getdirtype dirtype)
   std::string retval = Memory.ROMFilename;
   size_t pos;
 
-  if (dirNames[dirtype][0])
-    return std::string(s9x_base_dir) + SLASH_STR + dirNames[dirtype];
-  else
+  switch (dirtype)
   {
-    switch (dirtype)
-    {
-    case DEFAULT_DIR:
-      retval = s9x_base_dir;
-      break;
+  case HOME_DIR:
+    retval = std::string(getenv("HOME"));
+    break;
 
-    case HOME_DIR:
-      retval = std::string(getenv("HOME"));
-      break;
+  case ROMFILENAME_DIR:
+    retval = Memory.ROMFilename;
+    pos = retval.rfind("/");
+    if (pos != std::string::npos)
+      retval = retval.substr(pos);
+    break;
 
-    case ROMFILENAME_DIR:
-      retval = Memory.ROMFilename;
-      pos = retval.rfind("/");
-      if (pos != std::string::npos)
-        retval = retval.substr(pos);
-      break;
-
-    default:
-      break;
-    }
+  default:
+    retval = std::string(".");
+    break;
   }
   return retval;
 }
@@ -548,8 +457,6 @@ bool8 S9xOpenSoundDevice(void)
 
 void S9xExit(void)
 {
-  S9xMovieShutdown();
-
   S9xSetSoundMute(TRUE);
   Settings.StopEmulation = TRUE;
 
@@ -557,7 +464,6 @@ void S9xExit(void)
 
   Memory.SaveSRAM(S9xGetFilename(".srm", SRAM_DIR).c_str());
   S9xResetSaveTimer(FALSE);
-  S9xSaveCheatFile(S9xGetFilename(".cht", CHEAT_DIR));
   S9xUnmapAllControls();
   Memory.Deinit();
   S9xDeinitAPU();
@@ -604,9 +510,6 @@ int main(int argc, char **argv)
 
   printf("\n\nSnes9x " VERSION "\n");
 
-  snprintf(default_dir, PATH_MAX + 1, "%s%s%s", getenv("HOME"), SLASH_STR, ".snes9x");
-  s9x_base_dir = default_dir;
-
   memset(&Settings, 0, sizeof(Settings));
   Settings.MouseMaster = TRUE;
   Settings.SuperScopeMaster = TRUE;
@@ -633,32 +536,14 @@ int main(int argc, char **argv)
   Settings.CartAName[0] = 0;
   Settings.CartBName[0] = 0;
 
-#ifdef JOYSTICK_SUPPORT
-  unixSettings.JoystickEnabled = TRUE;
-#else
-  unixSettings.JoystickEnabled = FALSE;
-#endif
-  unixSettings.ThreadSound = TRUE;
-  unixSettings.SoundBufferSize = 100;
-  unixSettings.SoundFragmentSize = 2048;
-
-  unixSettings.rewindBufferSize = 0;
-  unixSettings.rewindGranularity = 1;
-
-  rewinding = false;
-
   CPU.Flags = 0;
 
   S9xLoadConfigFiles(argv, argc);
   rom_filename = S9xParseArgs(argv, argc);
-  S9xDeleteCheats();
-
-  make_snes9x_dirs();
 
   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_JOYSTICK | SDL_INIT_GAMECONTROLLER | SDL_INIT_AUDIO) < 0)
   {
     fprintf(stderr, "Failed to initialize SDL with joystick support. Retrying without.\n");
-    // joystick_enabled = false;
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0)
     {
       fprintf(stderr, "Unable to initialize SDL: %s\n", SDL_GetError());
@@ -700,16 +585,7 @@ int main(int argc, char **argv)
     exit(1);
   }
 
-  S9xDeleteCheats();
-  S9xCheatsEnable();
   Memory.LoadSRAM(S9xGetFilename(".srm", SRAM_DIR).c_str());
-
-  if (Settings.ApplyCheats)
-  {
-    S9xLoadCheatFile(S9xGetFilename(".cht", CHEAT_DIR));
-  }
-
-  S9xParseArgsForCheats(argv, argc);
 
   CPU.Flags = saved_flags;
   Settings.StopEmulation = FALSE;
@@ -741,20 +617,6 @@ int main(int argc, char **argv)
 
     if (!Settings.Paused)
     {
-      if (rewinding)
-      {
-        uint16 joypads[8];
-        for (int i = 0; i < 8; i++)
-          joypads[i] = MovieGetJoypad(i);
-
-        rewinding = stateMan.pop();
-
-        for (int i = 0; i < 8; i++)
-          MovieSetJoypad(i, joypads[i]);
-      }
-      else if (IPPU.TotalEmulatedFrames % unixSettings.rewindGranularity == 0)
-        stateMan.push();
-
       S9xMainLoop();
     }
 
@@ -769,21 +631,8 @@ int main(int argc, char **argv)
 
     if (Settings.Paused)
     {
-      // S9xProcessEvents(FALSE);
       usleep(100000);
     }
-
-#ifdef JOYSTICK_SUPPORT
-    if (unixSettings.JoystickEnabled && (JoypadSkip++ & 1) == 0)
-    {
-      if (ReadJoysticks() == TRUE)
-      {
-        S9xLatchJSEvent();
-      }
-    }
-#endif
-
-    // S9xProcessEvents(FALSE);
 
     if (!Settings.Paused)
       S9xSetSoundMute(FALSE);

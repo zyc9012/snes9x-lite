@@ -12,10 +12,9 @@ if(NOT CMAKE_BUILD_TYPE)
 endif(NOT CMAKE_BUILD_TYPE)
 
 if(PROFILE)
-    set(CMAKE_BUILD_TYPE "Debug")
+    set(CMAKE_C_FLAGS "-pg -no-pie")
+    set(CMAKE_CXX_FLAGS "-pg -no-pie")
     set(CMAKE_EXE_LINKER_FLAGS "-pg")
-    set(CMAKE_C_FLAGS "-O0 -pg -no-pie")
-    set(CMAKE_CXX_FLAGS "-O0 -pg -no-pie")
 else()
     set(CMAKE_EXE_LINKER_FLAGS "-static -s")
 endif()
@@ -40,17 +39,6 @@ list(APPEND ARGS ${SDL2_CFLAGS})
 list(APPEND LIBS ${CMAKE_DL_LIBS} SDL2::SDL2-static)
 
 list(APPEND SOURCES
-    common/audio/s9x_sound_driver.hpp
-    filter/2xsai.cpp
-    filter/2xsai.h
-    filter/epx.cpp
-    filter/epx.h
-    filter/snes_ntsc_config.h
-    filter/snes_ntsc.h
-    filter/snes_ntsc_impl.h
-    filter/snes_ntsc.c
-    common/audio/s9x_sound_driver_sdl.hpp
-    common/audio/s9x_sound_driver_sdl.cpp
     fxinst.cpp
     fxemu.cpp
     fxdbg.cpp
@@ -106,14 +94,8 @@ list(APPEND SOURCES
     cheats.cpp
     cheats2.cpp
     sdd1emu.cpp
-    netplay.cpp
-    server.cpp
-    loadzip.cpp
     fscompat.cpp
     )
-
-list(APPEND SOURCES external/fmt/src/format.cc)
-list(APPEND INCLUDES external/fmt/include)
 
 list(APPEND SOURCES sdl.cpp)
 
