@@ -503,3 +503,6 @@ MigrationBackup/
 .DS_Store
 *.lock
 profile
+
+# VS Code
+.vscode/
