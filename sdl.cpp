@@ -35,6 +35,7 @@
 #include "snes9x.h"
 #include "memmap.h"
 #include "apu/apu.h"
+#include "apu/resampler.h"
 #include "gfx.h"
 #include "snapshot.h"
 #include "controls.h"
@@ -50,16 +51,11 @@ SDL_Renderer *renderer;
 SDL_Texture *texture;
 SDL_AudioDeviceID audioDev;
 
+Resampler audio_buffer;
+
 StateManager stateMan;
 
-#define FIXED_POINT 0x10000
-#define FIXED_POINT_SHIFT 16
-#define FIXED_POINT_REMAINDER 0xffff
-#define SOUND_BUFFER_SIZE (1024 * 16)
-#define SOUND_BUFFER_SIZE_MASK (SOUND_BUFFER_SIZE - 1)
-
-static volatile bool8 block_signal = FALSE;
-static volatile bool8 block_generate_sound = FALSE;
+#define SOUND_BUFFER_SIZE (256)
 
 static const char *sound_device = NULL;
 
@@ -445,32 +441,74 @@ void S9xSetupDefaultKeymap(void)
   ASSIGN_BUTTONf(SDL_KeyCode::SDLK_RIGHT, "Joypad1 Right");
 }
 
-// void S9xSamplesCallback(void *userdata, Uint8 * stream, int len) {
-// 	S9xMixSamples(stream, len / 2);
-// }
+bool audio_write_samples(int16_t *data, int samples)
+{
+  bool retval = true;
+  auto empty = audio_buffer.space_empty();
+  if (samples > empty)
+  {
+    retval = false;
+    audio_buffer.dump(audio_buffer.buffer_size / 2 - empty);
+  }
+  audio_buffer.push(data, samples);
 
+  return retval;
+}
+
+void audio_mix(void *userdata, unsigned char *output, int bytes)
+{
+  if (audio_buffer.avail() >= bytes >> 1)
+    audio_buffer.read((int16_t *)output, bytes >> 1);
+  else
+  {
+    audio_buffer.read((int16_t *)output, audio_buffer.avail());
+    audio_buffer.add_silence(audio_buffer.buffer_size / 2);
+  }
+}
+
+static std::vector<int16_t> temp_buffer;
 void S9xSamplesAvailable(void *data)
 {
 #ifndef NOSOUND
 
-  int samples_to_write;
-  static uint8 *sound_buffer = NULL;
-  static int sound_buffer_size = 0;
+  bool clear_leftover_samples = false;
+  int samples = S9xGetSampleCount();
+  int space_free = audio_buffer.space_empty();
 
-  samples_to_write = S9xGetSampleCount();
-
-  if (samples_to_write < 0)
-    return;
-
-  if (sound_buffer_size < samples_to_write * 2)
+  if (space_free < samples)
   {
-    sound_buffer = (uint8 *)realloc(sound_buffer, samples_to_write * 2);
-    sound_buffer_size = samples_to_write * 2;
+    if (!Settings.SoundSync)
+      clear_leftover_samples = true;
+
+    if (Settings.SoundSync && !Settings.TurboMode && !Settings.Mute)
+    {
+      for (int i = 0; i < 200; i++) // Wait for a max of 5ms
+      {
+        space_free = audio_buffer.space_empty();
+        if (space_free < samples)
+          usleep(50);
+        else
+          break;
+      }
+    }
   }
 
-  S9xMixSamples(sound_buffer, samples_to_write);
+  if (space_free < samples)
+    samples = space_free & ~1;
 
-  SDL_QueueAudio(audioDev, sound_buffer, sound_buffer_size);
+  if (samples == 0)
+  {
+    S9xClearSamples();
+    return;
+  }
+
+  if ((int)temp_buffer.size() < samples)
+    temp_buffer.resize(samples);
+  S9xMixSamples((uint8_t *)temp_buffer.data(), samples);
+  audio_write_samples(temp_buffer.data(), samples);
+
+  if (clear_leftover_samples)
+    S9xClearSamples();
 
 #endif // NOSOUND
 }
@@ -486,8 +524,8 @@ bool8 S9xOpenSoundDevice(void)
   wanted.freq = Settings.SoundPlaybackRate;
   wanted.format = AUDIO_S16;
   wanted.channels = 2; /* 1 = mono, 2 = stereo */
-  wanted.samples = 512;
-  wanted.callback = NULL;
+  wanted.samples = SOUND_BUFFER_SIZE;
+  wanted.callback = audio_mix;
   wanted.userdata = NULL;
 
   audioDev = SDL_OpenAudioDevice(NULL, 0, &wanted, &obtained, 0);
@@ -498,7 +536,9 @@ bool8 S9xOpenSoundDevice(void)
     exit(1);
   }
 
-  SDL_PauseAudioDevice(audioDev, 0);
+  audio_buffer.resize(SOUND_BUFFER_SIZE * 4 * obtained.freq / 1000);
+
+  SDL_PauseAudioDevice(audioDev, 1);
 
 #endif // NOSOUND
   S9xSetSamplesAvailableCallback(S9xSamplesAvailable, NULL);
@@ -519,12 +559,10 @@ void S9xExit(void)
   S9xResetSaveTimer(FALSE);
   S9xSaveCheatFile(S9xGetFilename(".cht", CHEAT_DIR));
   S9xUnmapAllControls();
-  // S9xDeinitDisplay();
   Memory.Deinit();
   S9xDeinitAPU();
 
   SDL_Quit();
-  // exit(0);
 }
 
 void S9xInitDisplay(int argc, char **argv)
@@ -684,6 +722,7 @@ int main(int argc, char **argv)
 #endif
 
   S9xSetSoundMute(FALSE);
+  SDL_PauseAudioDevice(audioDev, 0);
 
   while (1)
   {
