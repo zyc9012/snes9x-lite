@@ -342,12 +342,14 @@ void S9xSetupDefaultKeymap(void)
   ASSIGN_BUTTONf(SDL_KeyCode::SDLK_x, "Joypad1 Y");
   ASSIGN_BUTTONf(SDL_KeyCode::SDLK_a, "Joypad1 L");
   ASSIGN_BUTTONf(SDL_KeyCode::SDLK_s, "Joypad1 R");
-  ASSIGN_BUTTONf(SDL_KeyCode::SDLK_KP_ENTER, "Joypad1 Select");
-  ASSIGN_BUTTONf(SDL_KeyCode::SDLK_KP_SPACE, "Joypad1 Start");
+  ASSIGN_BUTTONf(SDL_KeyCode::SDLK_RETURN, "Joypad1 Select");
+  ASSIGN_BUTTONf(SDL_KeyCode::SDLK_SPACE, "Joypad1 Start");
   ASSIGN_BUTTONf(SDL_KeyCode::SDLK_UP, "Joypad1 Up");
   ASSIGN_BUTTONf(SDL_KeyCode::SDLK_DOWN, "Joypad1 Down");
   ASSIGN_BUTTONf(SDL_KeyCode::SDLK_LEFT, "Joypad1 Left");
   ASSIGN_BUTTONf(SDL_KeyCode::SDLK_RIGHT, "Joypad1 Right");
+  ASSIGN_BUTTONf(SDL_KeyCode::SDLK_F5, "QuickSave000");
+  ASSIGN_BUTTONf(SDL_KeyCode::SDLK_F9, "QuickLoad000");
 }
 
 bool audio_write_samples(int16_t *data, int samples)
