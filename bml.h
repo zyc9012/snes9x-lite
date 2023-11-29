@@ -1,3 +1,4 @@
+#ifdef CHEATS_SUPPORT
 #ifndef __BML_H
 #define __BML_H
 #include <vector>
@@ -24,4 +25,5 @@ struct bml_node
     node_type type;
 };
 
+#endif
 #endif

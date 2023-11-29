@@ -9,6 +9,7 @@
 #include "snes9x.h"
 #include "memmap.h"
 
+#ifdef CHEATS_SUPPORT
 static inline uint8 S9xGetByteFree(uint32 Address)
 {
     int block = (Address & 0xffffff) >> MEMMAP_SHIFT;
@@ -784,3 +785,54 @@ int S9xImportCheatsFromDatabase(const std::string &filename)
 
     return -2; /* No codes */
 }
+#else
+void S9xInitWatchedAddress(void)
+{
+}
+
+void S9xInitCheatData(void)
+{
+}
+
+void S9xUpdateCheatInMemory(SCheat &c)
+{
+}
+
+void S9xDisableCheat(SCheat &c)
+{
+}
+
+void S9xDeleteCheatGroup(uint32 g)
+{
+}
+
+void S9xDeleteCheats(void)
+{
+}
+
+void S9xEnableCheat(SCheat &c)
+{
+}
+
+void S9xEnableCheatGroup(uint32 num)
+{
+}
+
+void S9xDisableCheatGroup(uint32 num)
+{
+}
+
+int S9xAddCheatGroup(const std::string &name, const std::string &cheat)
+{
+    return -1;
+}
+
+void S9xUpdateCheatsInMemory(void)
+{
+}
+
+bool8 S9xLoadCheatFile(const std::string &filename)
+{
+    return false;
+}
+#endif

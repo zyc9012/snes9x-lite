@@ -9,6 +9,7 @@
 #include "memmap.h"
 #include "cheats.h"
 
+#ifdef CHEATS_SUPPORT
 #define WRAM_BITS	ALL_BITS
 #define SRAM_BITS	ALL_BITS + (0x20000 >> 5)
 #define IRAM_BITS	ALL_BITS + (0x30000 >> 5)
@@ -302,3 +303,24 @@ void S9xOutputCheatSearchResults (SCheatData *d)
 			printf("IRAM: %05x: %02x\n", i, d->FillRAM[i + 0x3000]);
 	}
 }
+#else
+void S9xStartCheatSearch (SCheatData *d)
+{
+}
+
+void S9xSearchForChange (SCheatData *d, S9xCheatComparisonType cmp, S9xCheatDataSize size, bool8 is_signed, bool8 update)
+{
+}
+
+void S9xSearchForValue (SCheatData *d, S9xCheatComparisonType cmp, S9xCheatDataSize size, uint32 value, bool8 is_signed, bool8 update)
+{
+}
+
+void S9xSearchForAddress (SCheatData *d, S9xCheatComparisonType cmp, S9xCheatDataSize size, uint32 value, bool8 update)
+{
+}
+
+void S9xOutputCheatSearchResults (SCheatData *d)
+{
+}
+#endif

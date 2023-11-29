@@ -1,3 +1,4 @@
+#ifdef CHEATS_SUPPORT
 #include <vector>
 #include <iostream>
 #include <fstream>
@@ -289,3 +290,4 @@ bool bml_node::parse_file(std::string filename)
 
     return true;
 }
+#endif
